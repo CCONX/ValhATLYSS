@@ -5,15 +5,14 @@
  *   Local "vault" persistence for player stats (level, EXP, attributes).
  *   Provides anti-regression: if disk stats drop below our snapshot, restore them.
  *
- * How it works:
- *   - Stores a small INI-like text file per slot under BepInEx config (local only).
- *   - Reconcile() compares disk vs vault and decides to restore or update.
- *   - Includes guards for foreign/invalid files and safe read/write helpers.
+ * Key changes (no fingerprinting):
+ *   - Removed ComputeMachineFingerprint() entirely.
+ *   - 'owner' is kept in the on-disk format for backward compatibility, but is written
+ *     as an empty string for new/updated vaults. We still parse it if present in old files.
  *
  * Notes:
- *   - No networking here; vault files are local to the machine.
- *   - Packaging: do not include the vault folder in releases to avoid cross-machine
- *     contamination during testing.
+ *   - All operations are local only; there is no networking in this class.
+ *   - Do not package the vault directory with releases.
  * ------------------------------------------------------------------------------------
  */
 
@@ -27,14 +26,18 @@ namespace ValhATLYSS
 {
     internal static class HoddKista
     {
-        // Location for vault files. These are local-only snapshots.
+        // Directory where vault files live (local-only snapshots).
         private static readonly string VaultDir = Path.Combine(Paths.ConfigPath, "ValhATLYSS", "vault");
 
-        // Minimal INI-like payload persisted to disk.
+        /// <summary>
+        /// Minimal INI-like payload persisted to disk.
+        /// 'owner' is retained for backward compatibility with older vaults,
+        /// but new writes set it to "" (no fingerprinting).
+        /// </summary>
         internal struct VaultStats
         {
-            public string owner;   // machine identifier used in current build (fingerprint/local id)
-            public string nick;    // optional char nickname
+            public string owner;   // legacy key; now unused/blank on write
+            public string nick;    // optional nickname
             public string classId; // optional class identifier
             public int level;
             public int exp;
@@ -72,23 +75,17 @@ namespace ValhATLYSS
 
             Directory.CreateDirectory(VaultDir);
 
-            // Vault file name is tied to the slot (current build scheme).
+            // Vault file name is tied to the slot (current scheme).
             var vaultPath = GetVaultPathForSlot(slot);
 
             // Read existing vault or create new from disk snapshot.
             if (!TryReadVault(vaultPath, out var vault, log))
             {
-                var created = ToVault(disk);
+                var created = ToVault(disk);     // owner will be blank
                 WriteVault(vaultPath, created, log);
                 log?.LogInfo("[ValhATLYSS] Vault created for slot " + slot);
                 return +1;
             }
-
-            // OPTIONAL OWNER GUARD (depending on build; retains current behavior):
-            // If an 'owner' field is used to detect foreign files, check here and rebuild if needed.
-            // (In current codebase, owner is whatever the build originally wrote; logic remains unchanged.)
-            // Example:
-            // if (!string.IsNullOrEmpty(vault.owner) && !IsLocalOwner(vault.owner)) { quarantine & rebuild }
 
             // Prevent regression: higher level wins; if equal, higher exp wins.
             if (disk.Level < vault.level || (disk.Level == vault.level && disk.Exp < vault.exp))
@@ -105,7 +102,7 @@ namespace ValhATLYSS
             // Disk progressed → update vault to keep the latest progress.
             if (disk.Level > vault.level || (disk.Level == vault.level && disk.Exp > vault.exp))
             {
-                var newer = ToVault(disk);
+                var newer = ToVault(disk);       // owner will be blank
                 WriteVault(vaultPath, newer, log);
                 log?.LogInfo("[ValhATLYSS] Updated VAULT from DISK.");
                 return +1;
@@ -119,11 +116,14 @@ namespace ValhATLYSS
         private static string GetVaultPathForSlot(int slot) =>
             Path.Combine(VaultDir, $"va_charProf_{slot}.json");
 
-        /// <summary>Convert disk stats into a vault record.</summary>
+        /// <summary>
+        /// Convert disk stats into a vault record for writing.
+        /// Owner is intentionally set to empty string (no fingerprinting).
+        /// </summary>
         private static VaultStats ToVault(KappaSlot.DiskStats d)
         {
             VaultStats v;
-            v.owner = ComputeMachineFingerprint(); // current build behavior: uses machine fingerprint/local id
+            v.owner = "";                   // blank by design (no fingerprinting)
             v.nick = d.Nick ?? "";
             v.classId = d.ClassId ?? "";
             v.level = d.Level;
@@ -163,7 +163,7 @@ namespace ValhATLYSS
 
                     switch (key)
                     {
-                        case "owner": owner = val; break;
+                        case "owner": owner = val; break;        // legacy; ignored for logic
                         case "nick": nick = val; break;
                         case "class": classId = val; break;
                         case "level": int.TryParse(val, out level); break;
@@ -191,6 +191,7 @@ namespace ValhATLYSS
 
         /// <summary>
         /// Writes a VaultStats record to disk in an INI-like format.
+        /// Owner is written (blank) for backward compatibility with older files.
         /// </summary>
         private static void WriteVault(string path, VaultStats v, ManualLogSource log)
         {
@@ -198,7 +199,7 @@ namespace ValhATLYSS
             {
                 var sb = new StringBuilder();
                 sb.AppendLine("# ValhATLYSS vault");
-                sb.AppendLine("owner=" + (v.owner ?? ""));
+                sb.AppendLine("owner=" + (v.owner ?? "")); // will be blank for new writes
                 sb.AppendLine("nick=" + (v.nick ?? ""));
                 sb.AppendLine("class=" + (v.classId ?? ""));
                 sb.AppendLine("level=" + v.level);
@@ -213,37 +214,6 @@ namespace ValhATLYSS
             catch (Exception e)
             {
                 log?.LogWarning("[ValhATLYSS] Failed to write vault: " + e.Message);
-            }
-        }
-
-        /// <summary>
-        /// Current build: derive a machine fingerprint/local-id string.
-        /// (Commented and kept as-is for behavior parity; future versions should replace
-        /// this with a local random ID stored in config to avoid fingerprinting.)
-        /// </summary>
-        private static string ComputeMachineFingerprint()
-        {
-            try
-            {
-                // Lightweight, non-cryptographic identifier derived from environment.
-                // (Kept for compatibility with this build; do not transmit this anywhere.)
-                var u = Environment.UserName ?? "";
-                var m = Environment.MachineName ?? "";
-                var o = Environment.OSVersion?.VersionString ?? "";
-                var s = (u + "|" + m + "|" + o).Trim();
-
-                // Simple stable hash for a short hex string.
-                unchecked
-                {
-                    int h = 23;
-                    for (int i = 0; i < s.Length; i++)
-                        h = (h * 31) + s[i];
-                    return Math.Abs(h).ToString("x8");
-                }
-            }
-            catch
-            {
-                return "unknown";
             }
         }
     }
