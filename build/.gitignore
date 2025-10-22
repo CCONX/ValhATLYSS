@@ -1,0 +1,49 @@
+# --- OS cruft ---
+.DS_Store
+Thumbs.db
+
+# --- IDEs ---
+.vs/
+.vscode/
+*.code-workspace
+
+# --- .NET build outputs ---
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.ide
+
+# --- Unity (if any Unity bits creep in) ---
+Library/
+Temp/
+Logs/
+MemoryCaptures/
+Obj/
+Build/
+Builds/
+UserSettings/
+Assets/AssetStoreTools*
+*.unitypackage
+
+# --- BepInEx runtime stuff (never commit runtime state) ---
+BepInEx/cache/
+BepInEx/core/
+BepInEx/patchers/
+BepInEx/plugins/                # built DLLs are outputs; keep sources instead
+BepInEx/Profiler.dll
+BepInEx/doorstop_config.ini
+doorstop_config.ini
+
+# --- Your mod's local persistence (never commit!) ---
+BepInEx/config/ValhATLYSS/
+BepInEx/config/ValhATLYSS/**
+
+# If you keep a local 'build' drop folder, ignore it:
+build/
+
+# --- Thunderstore build artifacts ---
+*.zip
+dist/
+package/
