@@ -1,0 +1,11 @@
+D:\ATLYSS_Uncap_StatLogics_Project\ValhATLYSS\bin\Release\netstandard2.1\ValhATLYSS.deps.json
+D:\ATLYSS_Uncap_StatLogics_Project\ValhATLYSS\bin\Release\netstandard2.1\ValhATLYSS.dll
+D:\ATLYSS_Uncap_StatLogics_Project\ValhATLYSS\bin\Release\netstandard2.1\ValhATLYSS.pdb
+D:\ATLYSS_Uncap_StatLogics_Project\ValhATLYSS\obj\Release\netstandard2.1\ATLYSS.Uncap.StatLogics.csproj.AssemblyReference.cache
+D:\ATLYSS_Uncap_StatLogics_Project\ValhATLYSS\obj\Release\netstandard2.1\ATLYSS.Uncap.StatLogics.GeneratedMSBuildEditorConfig.editorconfig
+D:\ATLYSS_Uncap_StatLogics_Project\ValhATLYSS\obj\Release\netstandard2.1\ATLYSS.Uncap.StatLogics.AssemblyInfoInputs.cache
+D:\ATLYSS_Uncap_StatLogics_Project\ValhATLYSS\obj\Release\netstandard2.1\ATLYSS.Uncap.StatLogics.AssemblyInfo.cs
+D:\ATLYSS_Uncap_StatLogics_Project\ValhATLYSS\obj\Release\netstandard2.1\ATLYSS.Uncap.StatLogics.csproj.CoreCompileInputs.cache
+D:\ATLYSS_Uncap_StatLogics_Project\ValhATLYSS\obj\Release\netstandard2.1\ATLYSS.Uncap.StatLogics.sourcelink.json
+D:\ATLYSS_Uncap_StatLogics_Project\ValhATLYSS\obj\Release\netstandard2.1\ValhATLYSS.dll
+D:\ATLYSS_Uncap_StatLogics_Project\ValhATLYSS\obj\Release\netstandard2.1\ValhATLYSS.pdb
