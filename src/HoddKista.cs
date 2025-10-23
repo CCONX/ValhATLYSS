@@ -1,19 +1,16 @@
 ﻿/**
  * ValhATLYSS :: HoddKista.cs
- * ------------------------------------------------------------------------------------
+ * -----------------------------------------------------------------------------
  * Purpose:
- *   Local "vault" persistence for player stats (level, EXP, attributes).
- *   Provides anti-regression: if disk stats drop below our snapshot, restore them.
+ *   Local "vault" snapshot for player stats (level, EXP, attributes).
+ *   Reconcile rules:
+ *     - If DISK regressed vs VAULT → restore DISK from VAULT (write file).
+ *     - If DISK progressed vs VAULT → update VAULT from DISK.
  *
- * Key changes (no fingerprinting):
- *   - Removed ComputeMachineFingerprint() entirely.
- *   - 'owner' is kept in the on-disk format for backward compatibility, but is written
- *     as an empty string for new/updated vaults. We still parse it if present in old files.
- *
- * Notes:
- *   - All operations are local only; there is no networking in this class.
- *   - Do not package the vault directory with releases.
- * ------------------------------------------------------------------------------------
+ * This build:
+ *   - NO fingerprinting. 'owner' is retained for compatibility but written blank.
+ *   - NO live apply. We do not touch runtime Player objects at all.
+ * -----------------------------------------------------------------------------
  */
 
 using System;
@@ -26,25 +23,18 @@ namespace ValhATLYSS
 {
     internal static class HoddKista
     {
-        // Directory where vault files live (local-only snapshots).
         private static readonly string VaultDir = Path.Combine(Paths.ConfigPath, "ValhATLYSS", "vault");
 
-        /// <summary>
-        /// Minimal INI-like payload persisted to disk.
-        /// 'owner' is retained for backward compatibility with older vaults,
-        /// but new writes set it to "" (no fingerprinting).
-        /// </summary>
         internal struct VaultStats
         {
-            public string owner;   // legacy key; now unused/blank on write
-            public string nick;    // optional nickname
-            public string classId; // optional class identifier
+            public string owner;   // legacy key; blank on new writes
+            public string nick;
+            public string classId;
             public int level;
             public int exp;
             public int str, dex, mind, vit;
         }
 
-        /// <summary>Create the vault directory if missing.</summary>
         internal static void EnsureReady(ManualLogSource log)
         {
             try
@@ -59,14 +49,13 @@ namespace ValhATLYSS
         }
 
         /// <summary>
-        /// Core reconcile routine. Reads/creates a vault for the slot, then:
-        /// - If disk regressed vs vault: write vault → disk (anti-regression).
-        /// - If disk progressed vs vault: write disk → vault (persist progress).
-        /// Returns -1 (restored disk), 0 (no-op), +1 (updated vault/created).
+        /// Compare disk vs vault and reconcile. Returns:
+        ///  -1 : disk restored from vault
+        ///   0 : no changes
+        ///  +1 : vault updated from disk OR created
         /// </summary>
         internal static int Reconcile(string profilePath, KappaSlot.DiskStats disk, ManualLogSource log)
         {
-            // Determine which slot this profile belongs to from its path.
             if (!KappaSlot.ParseSlotIndexFromPath(profilePath, out var slot))
             {
                 log?.LogWarning("[ValhATLYSS] Reconcile: cannot parse slot from " + profilePath);
@@ -74,56 +63,58 @@ namespace ValhATLYSS
             }
 
             Directory.CreateDirectory(VaultDir);
-
-            // Vault file name is tied to the slot (current scheme).
             var vaultPath = GetVaultPathForSlot(slot);
 
-            // Read existing vault or create new from disk snapshot.
+            // Create vault if none exists
             if (!TryReadVault(vaultPath, out var vault, log))
             {
-                var created = ToVault(disk);     // owner will be blank
+                var created = ToVault(disk); // owner blank
                 WriteVault(vaultPath, created, log);
                 log?.LogInfo("[ValhATLYSS] Vault created for slot " + slot);
                 return +1;
             }
 
-            // Prevent regression: higher level wins; if equal, higher exp wins.
-            if (disk.Level < vault.level || (disk.Level == vault.level && disk.Exp < vault.exp))
+            // Anti-regression: higher level wins; if equal, higher exp wins
+            bool diskBehindVault =
+                (disk.Level < vault.level) ||
+                (disk.Level == vault.level && disk.Exp < vault.exp);
+
+            if (diskBehindVault)
             {
+                // Restore DISK from VAULT (file write only)
                 if (KappaSlot.TryWriteDiskStats(profilePath, vault.level, vault.exp, vault.str, vault.dex, vault.mind, vault.vit, log))
                 {
                     log?.LogInfo("[ValhATLYSS] Restored DISK from VAULT.");
                     return -1;
                 }
+
                 log?.LogWarning("[ValhATLYSS] Failed to restore disk from vault.");
                 return 0;
             }
 
-            // Disk progressed → update vault to keep the latest progress.
-            if (disk.Level > vault.level || (disk.Level == vault.level && disk.Exp > vault.exp))
+            // If disk progressed, update vault snapshot
+            bool diskAheadOfVault =
+                (disk.Level > vault.level) ||
+                (disk.Level == vault.level && disk.Exp > vault.exp);
+
+            if (diskAheadOfVault)
             {
-                var newer = ToVault(disk);       // owner will be blank
+                var newer = ToVault(disk); // owner blank
                 WriteVault(vaultPath, newer, log);
                 log?.LogInfo("[ValhATLYSS] Updated VAULT from DISK.");
                 return +1;
             }
 
-            // No changes necessary.
             return 0;
         }
 
-        /// <summary>Current vault filename scheme (per slot).</summary>
         private static string GetVaultPathForSlot(int slot) =>
             Path.Combine(VaultDir, $"va_charProf_{slot}.json");
 
-        /// <summary>
-        /// Convert disk stats into a vault record for writing.
-        /// Owner is intentionally set to empty string (no fingerprinting).
-        /// </summary>
         private static VaultStats ToVault(KappaSlot.DiskStats d)
         {
             VaultStats v;
-            v.owner = "";                   // blank by design (no fingerprinting)
+            v.owner = "";                   // intentionally blank (no fingerprinting)
             v.nick = d.Nick ?? "";
             v.classId = d.ClassId ?? "";
             v.level = d.Level;
@@ -135,10 +126,6 @@ namespace ValhATLYSS
             return v;
         }
 
-        /// <summary>
-        /// Reads a vault file from disk into VaultStats.
-        /// The format is a simple key=value per line; lines starting with '#' are comments.
-        /// </summary>
         private static bool TryReadVault(string path, out VaultStats v, ManualLogSource log)
         {
             v = default;
@@ -163,7 +150,7 @@ namespace ValhATLYSS
 
                     switch (key)
                     {
-                        case "owner": owner = val; break;        // legacy; ignored for logic
+                        case "owner": owner = val; break; // legacy; ignored in logic
                         case "nick": nick = val; break;
                         case "class": classId = val; break;
                         case "level": int.TryParse(val, out level); break;
@@ -189,17 +176,13 @@ namespace ValhATLYSS
             }
         }
 
-        /// <summary>
-        /// Writes a VaultStats record to disk in an INI-like format.
-        /// Owner is written (blank) for backward compatibility with older files.
-        /// </summary>
         private static void WriteVault(string path, VaultStats v, ManualLogSource log)
         {
             try
             {
                 var sb = new StringBuilder();
                 sb.AppendLine("# ValhATLYSS vault");
-                sb.AppendLine("owner=" + (v.owner ?? "")); // will be blank for new writes
+                sb.AppendLine("owner=" + (v.owner ?? "")); // blank in new writes
                 sb.AppendLine("nick=" + (v.nick ?? ""));
                 sb.AppendLine("class=" + (v.classId ?? ""));
                 sb.AppendLine("level=" + v.level);

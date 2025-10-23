@@ -1,0 +1,96 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- You asked to keep this; note Unity/BepInEx typically use net472, but we'll honor netstandard2.1 -->
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>latest</LangVersion>
+
+    <AssemblyName>ValhATLYSS</AssemblyName>
+    <RootNamespace>ValhATLYSS</RootNamespace>
+
+    <!-- Generate publicized copies of referenced game assemblies -->
+    <Publicize>true</Publicize>
+    <PublicizerOutputDir>$(MSBuildProjectDirectory)\publicized_assemblies</PublicizerOutputDir>
+
+    <!-- Your exact paths -->
+    <ATLYSS_ROOT>C:\Program Files (x86)\Steam\steamapps\common\ATLYSS</ATLYSS_ROOT>
+    <ATLYSS_MANAGED>$(ATLYSS_ROOT)\ATLYSS_Data\Managed\</ATLYSS_MANAGED>
+    <BEPINEX_CORE>C:\Users\charl\AppData\Roaming\r2modmanPlus-local\ATLYSS\profiles\Default\BepInEx\core\</BEPINEX_CORE>
+    <BEPINEX_PLUGINS>$(BEPINEX_CORE)..\plugins\</BEPINEX_PLUGINS>  <!-- derives plugins/ from your r2modman core path -->
+
+    <!-- Optional: copy build output to both game plugins and r2modman profile plugins -->
+    <PostBuildEvent>
+if exist "$(ATLYSS_ROOT)\BepInEx\plugins\ValhATLYSS" (
+  copy /Y "$(TargetPath)" "$(ATLYSS_ROOT)\BepInEx\plugins\ValhATLYSS\$(TargetFileName)"
+)
+if exist "$(BEPINEX_PLUGINS)ValhATLYSS" (
+  copy /Y "$(TargetPath)" "$(BEPINEX_PLUGINS)ValhATLYSS\$(TargetFileName)"
+)
+    </PostBuildEvent>
+  </PropertyGroup>
+
+  <!-- MSBuild publicizer -->
+  <ItemGroup>
+    <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.3.0">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <!-- Step 1: point at VANILLA game assemblies so the publicizer can read them.
+       On first build, it emits publicized copies into publicized_assemblies/.
+       We include both vanilla (when no publicized exists) and publicized (when it does). -->
+  <ItemGroup>
+    <!-- Use vanilla on first build -->
+    <Reference Include="Assembly-CSharp" Condition="!Exists('$(PublicizerOutputDir)\Assembly-CSharp.dll')">
+      <HintPath>$(ATLYSS_MANAGED)Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- After first build, automatically bind against the PUBLICIZED copy -->
+    <Reference Include="Assembly-CSharp.publicized" Condition="Exists('$(PublicizerOutputDir)\Assembly-CSharp.dll')">
+      <HintPath>$(PublicizerOutputDir)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- Mirror: Player derives from NetworkBehaviour -->
+    <Reference Include="Mirror">
+      <HintPath>$(ATLYSS_MANAGED)Mirror.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- Unity bits commonly needed by BepInEx plugins -->
+    <Reference Include="UnityEngine">
+      <HintPath>$(ATLYSS_MANAGED)UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(ATLYSS_MANAGED)UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI" Condition="Exists('$(ATLYSS_MANAGED)UnityEngine.UI.dll')">
+      <HintPath>$(ATLYSS_MANAGED)UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- TextMeshPro can be either of these depending on Unity version -->
+    <Reference Include="Unity.TextMeshPro" Condition="Exists('$(ATLYSS_MANAGED)Unity.TextMeshPro.dll')">
+      <HintPath>$(ATLYSS_MANAGED)Unity.TextMeshPro.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextMeshPro" Condition="Exists('$(ATLYSS_MANAGED)UnityEngine.TextMeshPro.dll')">
+      <HintPath>$(ATLYSS_MANAGED)UnityEngine.TextMeshPro.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextCoreTextEngineModule" Condition="Exists('$(ATLYSS_MANAGED)UnityEngine.TextCoreTextEngineModule.dll')">
+      <HintPath>$(ATLYSS_MANAGED)UnityEngine.TextCoreTextEngineModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- BepInEx / Harmony (compile-time only) -->
+    <Reference Include="BepInEx">
+      <HintPath>$(BEPINEX_CORE)BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(BEPINEX_CORE)0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

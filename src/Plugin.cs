@@ -1,23 +1,18 @@
 /**
  * ValhATLYSS :: Plugin.cs
- * ------------------------------------------------------------------------------------
+ * -----------------------------------------------------------------------------
  * Purpose:
- *   Main BepInEx plugin entry point. Responsible for:
- *     - Initializing logging and bootstrapping.
- *     - Discovering the ATLYSS profileCollections folder.
- *     - Watching the character profile files for changes.
- *     - Driving the reconcile pipeline when profiles change.
- *
- * Key ideas:
- *   - Uses a FileSystemWatcher to detect local file changes (no networking).
- *   - On changes, reads profile stats (via KappaSlot), compares with the local
- *     vault snapshot (via HoddKista), and applies "prevent regression" rules.
- *   - Provides utilities for reading curves and leveling logic (Ristir/SeidrVegr).
+ *   BepInEx entry point. Sets up:
+ *     - Logging
+ *     - Discovery of the ATLYSS profileCollections folder
+ *     - FileSystemWatcher for atl_characterProfile_* changes
+ *     - Reconcile pipeline (disk <-> vault) on change
  *
  * Notes:
- *   - All operations are local to the user's machine.
- *   - Avoid packaging any config/vault folders with releases.
- * ------------------------------------------------------------------------------------
+ *   - Entirely local; no networking.
+ *   - This build performs NO live in-memory stat application. It restores by
+ *     writing the profile file only. The game will pick up those values normally.
+ * -----------------------------------------------------------------------------
  */
 
 using System;
@@ -40,11 +35,6 @@ namespace ValhATLYSS
         private DateTime _lastEventUtc = DateTime.MinValue;
         private bool _bootstrapped;
 
-        /// <summary>
-        /// Awake is called once when the plugin is loaded.
-        /// Sets up logging, resolves the ATLYSS profiles folder, configures a FileSystemWatcher,
-        /// and starts a delayed bootstrap to avoid early-race conditions while the game loads.
-        /// </summary>
         private void Awake()
         {
             Log = this.Logger;
@@ -64,19 +54,14 @@ namespace ValhATLYSS
             StartCoroutine(Bootstrap());
         }
 
-        /// <summary>
-        /// Deferred bootstrap to let the game finish initializing filesystem/state.
-        /// </summary>
+        /// <summary>Deferred boot to avoid early race conditions during game init.</summary>
         private IEnumerator Bootstrap()
         {
-            // Small delay to allow the game to fully set up the profile files/directories.
             yield return new WaitForSeconds(2.0f);
             _bootstrapped = true;
 
-            // Ensure the vault directory exists and log its location.
             HoddKista.EnsureReady(Log);
 
-            // On first boot, try to reconcile the most recent profile if one exists.
             if (TryGetMostRecentProfile(out var path))
             {
                 Log.LogInfo("[ValhATLYSS] Initial reconcile of most recent profile: " + path);
@@ -88,22 +73,22 @@ namespace ValhATLYSS
             }
         }
 
-        /// <summary>
-        /// Set up the file watcher to listen to changes on atl_characterProfile_* files.
-        /// </summary>
+        /// <summary>Set up the watcher to listen for profile file modifications.</summary>
         private void TryEnableWatcher(string profilesRoot)
         {
             try
             {
-                _watcher = new FileSystemWatcher(profilesRoot);
-                _watcher.NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size;
-                _watcher.IncludeSubdirectories = false;
-                _watcher.Filter = "atl_characterProfile_*";
+                _watcher = new FileSystemWatcher(profilesRoot)
+                {
+                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
+                    IncludeSubdirectories = false,
+                    Filter = "atl_characterProfile_*",
+                    EnableRaisingEvents = true
+                };
 
                 _watcher.Changed += OnProfileChanged;
                 _watcher.Created += OnProfileChanged;
                 _watcher.Renamed += OnProfileRenamed;
-                _watcher.EnableRaisingEvents = true;
 
                 Log.LogInfo("[ValhATLYSS] File watcher enabled.");
             }
@@ -113,9 +98,6 @@ namespace ValhATLYSS
             }
         }
 
-        /// <summary>
-        /// Handler for file Changed/Created events. Debounced to avoid double-firing while the game writes.
-        /// </summary>
         private void OnProfileChanged(object sender, FileSystemEventArgs e)
         {
             if (!_bootstrapped) return;
@@ -123,13 +105,9 @@ namespace ValhATLYSS
             if ((now - _lastEventUtc).TotalMilliseconds < 250) return; // debounce
             _lastEventUtc = now;
 
-            // Reconcile the specific profile that triggered the change.
             TryReconcileProfile(e.FullPath);
         }
 
-        /// <summary>
-        /// Handler for file rename events (e.g., temp writes -> final).
-        /// </summary>
         private void OnProfileRenamed(object sender, RenamedEventArgs e)
         {
             if (!_bootstrapped) return;
@@ -141,10 +119,7 @@ namespace ValhATLYSS
         }
 
         /// <summary>
-        /// Performs the reconcile flow for one profile path:
-        /// 1) Read disk stats (KappaSlot).
-        /// 2) Compare vs vault snapshot (HoddKista).
-        /// 3) Apply anti-regression or update vault accordingly.
+        /// Read disk stats, compare vs. vault, and reconcile in whichever direction is needed.
         /// </summary>
         private void TryReconcileProfile(string profilePath)
         {
@@ -212,8 +187,8 @@ namespace ValhATLYSS
         }
 
         /// <summary>
-        /// Helper to create a progression curve from an initial delta and exponential growth.
-        /// Used for EXP curves or other balancing tasks (utility).
+        /// Utility: extend a curve using exponential growth of deltas. Not used by reconcile,
+        /// but kept as a helper for balancing or future features.
         /// </summary>
         internal static AnimationCurve GrowCurve(AnimationCurve curve, float growth, float delta, Keyframe? last = null)
         {
@@ -233,7 +208,6 @@ namespace ValhATLYSS
                 float run = last.Value.value;
                 float d = delta > 0f ? delta : 100f;
 
-                // Extend to level 64 as a default target cap.
                 for (int lvl = (int)last.Value.time + 1; lvl <= 64; lvl++)
                 {
                     d *= growth;
