@@ -1,2 +1,46 @@
-
+# IDE
 .vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.iml
+*.DotSettings*
+*.orig
+
+# Build outputs
+bin/
+obj/
+publicized_assemblies/
+Debug*/
+Release*/
+*.pdb
+*.cache
+*.tmp
+*.log
+
+# NuGet (if you ever use local packages folder)
+packages/
+*.nupkg
+project.lock.json
+project.assets.json
+
+# OS junk
+Thumbs.db
+.DS_Store
+
+# Mod-specific - do NOT publish user data or configs
+BepInEx/config/ValhATLYSS/
+BepInEx/cache/
+BepInEx/LogOutput*.log
+
+# Game/user data you might accidentally copy in
+ATLYSS_Data/profileCollections/
+r2modmanPlus-local/
+profiles/
+steamapps/  # just in case someone nests the game dir
+
+# Archives / releases
+*.zip
+dist/
