@@ -1,31 +1,15 @@
-/**
- * ValhATLYSS :: Plugin.cs
- * -----------------------------------------------------------------------------
- * Purpose:
- *   BepInEx entry point. Sets up:
- *     - Logging
- *     - Discovery of the ATLYSS profileCollections folder
- *     - FileSystemWatcher for atl_characterProfile_* changes
- *     - Reconcile pipeline (disk <-> vault) on change
- *
- * Notes:
- *   - Entirely local; no networking.
- *   - This build performs NO live in-memory stat application. It restores by
- *     writing the profile file only. The game will pick up those values normally.
- * -----------------------------------------------------------------------------
- */
-
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using BepInEx;
 using BepInEx.Logging;
 using UnityEngine;
+using Mirror; // host/server check (no networking added by us)
 
 namespace ValhATLYSS
 {
-    [BepInPlugin("cconx.ValhATLYSS", "ValhATLYSS", "0.4.16")]
+    [BepInPlugin("cconx.ValhATLYSS", "ValhATLYSS", "0.4.17-hotfix")]
     public sealed class Plugin : BaseUnityPlugin
     {
         internal static ManualLogSource Log;
@@ -54,14 +38,19 @@ namespace ValhATLYSS
             StartCoroutine(Bootstrap());
         }
 
-        /// <summary>Deferred boot to avoid early race conditions during game init.</summary>
         private IEnumerator Bootstrap()
         {
+            // Small delay to let GameManager/StatLogics/Player spawn
             yield return new WaitForSeconds(2.0f);
             _bootstrapped = true;
 
+            // Our file-based vault remains as-is
             HoddKista.EnsureReady(Log);
 
+            // >>> NEW: host-only level-cap raise (no reflection, no fingerprinting) <<<
+            TryRaiseServerLevelCap(64); // change 64 to your desired cap
+
+            // (optional) first reconcile pass on the most recent profile
             if (TryGetMostRecentProfile(out var path))
             {
                 Log.LogInfo("[ValhATLYSS] Initial reconcile of most recent profile: " + path);
@@ -73,7 +62,60 @@ namespace ValhATLYSS
             }
         }
 
-        /// <summary>Set up the watcher to listen for profile file modifications.</summary>
+        /// <summary>
+        /// If we are HOST (listen server / singleplayer), bump StatLogics._maxMainLevel.
+        /// This is the server-side gate checked by PlayerStats.GainExp / OnLevelUp.
+        /// Does nothing on remote servers (client-only).
+        /// </summary>
+        private void TryRaiseServerLevelCap(int desiredCap)
+        {
+            try
+            {
+                var gm = GameManager._current;
+                var stat = gm != null ? gm._statLogics : null;
+                if (stat == null)
+                {
+                    Log?.LogInfo("[ValhATLYSS] Level-cap bump skipped: StatLogics not ready.");
+                    return;
+                }
+
+                // Are we actually the host/server in this process?
+                bool isHost = false;
+                try { isHost = NetworkServer.active; } catch { /* Mirror not active yet */ }
+                if (!isHost && Player._mainPlayer != null)
+                    isHost = Player._mainPlayer.isServer;
+
+                if (!isHost)
+                {
+                    Log?.LogInfo("[ValhATLYSS] Level-cap bump skipped: not host/server (remote server controls cap).");
+                    return;
+                }
+
+                if (desiredCap < 32) desiredCap = 32; // never lower below vanilla
+                if (stat._maxMainLevel < desiredCap)
+                {
+                    int old = stat._maxMainLevel;
+                    stat._maxMainLevel = desiredCap;
+                    Log?.LogInfo($"[ValhATLYSS] Raised server level cap: {old} → {desiredCap} (host-only).");
+                }
+                else
+                {
+                    Log?.LogInfo($"[ValhATLYSS] Server level cap already {stat._maxMainLevel}.");
+                }
+
+                // Optional: sanity log of curve coverage (no edits)
+                if (stat._experienceCurve != null)
+                {
+                    int keys = stat._experienceCurve.keys != null ? stat._experienceCurve.keys.Length : 0;
+                    Log?.LogInfo($"[ValhATLYSS] ExperienceCurve keys: {keys} (cap {stat._maxMainLevel}).");
+                }
+            }
+            catch (Exception e)
+            {
+                Log?.LogWarning("[ValhATLYSS] Level-cap bump failed: " + e.Message);
+            }
+        }
+
         private void TryEnableWatcher(string profilesRoot)
         {
             try
@@ -112,15 +154,12 @@ namespace ValhATLYSS
         {
             if (!_bootstrapped) return;
             var now = DateTime.UtcNow;
-            if ((now - _lastEventUtc).TotalMilliseconds < 250) return; // debounce
+            if ((now - _lastEventUtc).TotalMilliseconds < 250) return;
             _lastEventUtc = now;
 
             TryReconcileProfile(e.FullPath);
         }
 
-        /// <summary>
-        /// Read disk stats, compare vs. vault, and reconcile in whichever direction is needed.
-        /// </summary>
         private void TryReconcileProfile(string profilePath)
         {
             try
@@ -151,7 +190,6 @@ namespace ValhATLYSS
             }
         }
 
-        /// <summary>ATLYSS profileCollections path under the game root.</summary>
         internal static string GetProfilesRoot()
         {
             try
@@ -162,7 +200,6 @@ namespace ValhATLYSS
             catch { return null; }
         }
 
-        /// <summary>Find the most recently modified atl_characterProfile_* file.</summary>
         internal static bool TryGetMostRecentProfile(out string fullPath)
         {
             fullPath = null;
@@ -175,49 +212,11 @@ namespace ValhATLYSS
                 foreach (var f in files)
                 {
                     var t = File.GetLastWriteTimeUtc(f);
-                    if (t > last)
-                    {
-                        last = t;
-                        fullPath = f;
-                    }
+                    if (t > last) { last = t; fullPath = f; }
                 }
                 return fullPath != null;
             }
             catch { return false; }
-        }
-
-        /// <summary>
-        /// Utility: extend a curve using exponential growth of deltas. Not used by reconcile,
-        /// but kept as a helper for balancing or future features.
-        /// </summary>
-        internal static AnimationCurve GrowCurve(AnimationCurve curve, float growth, float delta, Keyframe? last = null)
-        {
-            try
-            {
-                if (curve == null) curve = new AnimationCurve();
-                var list = new List<Keyframe>(curve.keys);
-                if (list.Count == 0 && last.HasValue == false)
-                {
-                    list.Add(new Keyframe(1, 0));
-                    last = new Keyframe(1, 0);
-                }
-
-                if (!last.HasValue)
-                    last = list[^1];
-
-                float run = last.Value.value;
-                float d = delta > 0f ? delta : 100f;
-
-                for (int lvl = (int)last.Value.time + 1; lvl <= 64; lvl++)
-                {
-                    d *= growth;
-                    run += d;
-                    list.Add(new Keyframe(lvl, run));
-                }
-
-                return new AnimationCurve(list.ToArray());
-            }
-            catch { return curve; }
         }
     }
 }
