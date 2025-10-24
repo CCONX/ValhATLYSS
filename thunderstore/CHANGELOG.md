@@ -32,3 +32,7 @@
 ## > v0.4.16 patch
 
 * Levels are now returned to character
+
+## > v0.4.19 patch
+
+* No longer recursively calls for anti-regression but only when needed
