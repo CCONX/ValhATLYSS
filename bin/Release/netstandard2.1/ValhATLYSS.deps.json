@@ -1,0 +1,62 @@
+{
+  "runtimeTarget": {
+    "name": ".NETStandard,Version=v2.1/",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETStandard,Version=v2.1": {},
+    ".NETStandard,Version=v2.1/": {
+      "ValhATLYSS/1.0.0": {
+        "dependencies": {
+          "BepInEx.AssemblyPublicizer.MSBuild": "0.3.0"
+        },
+        "runtime": {
+          "ValhATLYSS.dll": {}
+        }
+      },
+      "BepInEx.AssemblyPublicizer.MSBuild/0.3.0": {
+        "runtime": {
+          "lib/netstandard2.1/AsmResolver.DotNet.dll": {
+            "assemblyVersion": "4.11.2.0",
+            "fileVersion": "4.11.2.0"
+          },
+          "lib/netstandard2.1/AsmResolver.PE.File.dll": {
+            "assemblyVersion": "4.11.2.0",
+            "fileVersion": "4.11.2.0"
+          },
+          "lib/netstandard2.1/AsmResolver.PE.dll": {
+            "assemblyVersion": "4.11.2.0",
+            "fileVersion": "4.11.2.0"
+          },
+          "lib/netstandard2.1/AsmResolver.dll": {
+            "assemblyVersion": "4.11.2.0",
+            "fileVersion": "4.11.2.0"
+          },
+          "lib/netstandard2.1/BepInEx.AssemblyPublicizer.MSBuild.dll": {
+            "assemblyVersion": "0.3.0.0",
+            "fileVersion": "0.3.0.0"
+          },
+          "lib/netstandard2.1/BepInEx.AssemblyPublicizer.dll": {
+            "assemblyVersion": "0.3.0.0",
+            "fileVersion": "0.3.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "ValhATLYSS/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "BepInEx.AssemblyPublicizer.MSBuild/0.3.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-dQHjSpE9BKyDsLvcawS0BPjNsnUATBhzWEdaziUPqLKfcb5EFM+Ss6LbW/Z5pzsdd8ayvhwlTzIvY6YX9pW7hQ==",
+      "path": "bepinex.assemblypublicizer.msbuild/0.3.0",
+      "hashPath": "bepinex.assemblypublicizer.msbuild.0.3.0.nupkg.sha512"
+    }
+  }
+}

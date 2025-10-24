@@ -1,6 +1,6 @@
 {
   "name": "ValhATLYSS",
-  "version_number": "0.4.16",
+  "version_number": "0.4.19",
   "website_url": "",
   "description": "Raises max level to 64, extends the EXP curve beyond 32, keeps +3 AP per level and +4 SP every other level, and survives reloads.",
   "dependencies": [

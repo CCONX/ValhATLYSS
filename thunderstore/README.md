@@ -1,4 +1,4 @@
-ValhATLYSS 0.4.14
+ValhATLYSS 0.4.19
 
 BETA 4 IS HERE!
 
